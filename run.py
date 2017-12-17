@@ -58,8 +58,8 @@ Source_encoding = False
 Target_encoding = False
 
 #'Change the encoder and decoder here. May need to do a little bit change in train part because of the input output shape'
-encoder = selfEncoderRNN(input_lang.n_words, hidden_size,3)
-decoder = AttnDecoderRNN(hidden_size, output_lang.n_words,3, dropout_p=0.1, max_length=MAX_LENGTH)
+encoder = EncoderRNN(input_lang.n_words, hidden_size,1)
+decoder = AttnDecoderRNN(hidden_size, output_lang.n_words,1, dropout_p=0.1, max_length=MAX_LENGTH)
 
 if Source_encoding:
     encoder.embedding.weight.data = torch.from_numpy(fra_embeddings).float()
@@ -71,7 +71,7 @@ if use_cuda:
     decoder = decoder.cuda()
 
 
-trainIters(encoder, decoder, 200000, pairs, input_lang, output_lang, print_every=5000, maxlen = MAX_LENGTH)
+trainIters(encoder, decoder, 120000, pairs, input_lang, output_lang, print_every=5000, maxlen = MAX_LENGTH)
 
 
 #%%
@@ -94,11 +94,22 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
 
     encoder_outputs = Variable(torch.zeros(max_length, encoder.hidden_size*2))
     encoder_outputs = encoder_outputs.cuda() if use_cuda else encoder_outputs
-
-    for ei in range(input_length):
-        encoder_output, encoder_hidden = encoder(input_variable[ei],
-                                                 encoder_hidden)
-        encoder_outputs[ei] = encoder_outputs[ei] + encoder_output[0][0]
+    
+    penal_sum = 0
+    if 'self' not in str(encoder.modules):
+        
+        for ei in range(input_length):
+            encoder_output, encoder_hidden = encoder(
+                    input_variable[ei], encoder_hidden)
+            encoder_outputs[ei] = encoder_output[0]#[0]
+    
+    else:
+        
+        for ei in range(input_length):
+            encoder_output, encoder_hidden, penal = encoder(
+                    input_variable[ei], encoder_hidden)
+            penal_sum += penal
+            encoder_outputs[ei] = encoder_output#[0][0]
 
     decoder_input = Variable(torch.LongTensor([[SOS_token]]))  # SOS
     decoder_input = decoder_input.cuda() if use_cuda else decoder_input
@@ -108,20 +119,26 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
     decoded_words = []
     decoder_attentions = torch.zeros(max_length, max_length)
 
-    for di in range(max_length):
-        decoder_output, decoder_hidden, decoder_attention = decoder(
-            decoder_input, decoder_hidden, encoder_output, encoder_outputs)
-        decoder_attentions[di] = decoder_attention.data
-        topv, topi = decoder_output.data.topk(1)
-        ni = topi[0][0]
-        if ni == EOS_token:
-            decoded_words.append('<EOS>')
-            break
-        else:
-            decoded_words.append(output_lang.index2word[ni])
 
-        decoder_input = Variable(torch.LongTensor([[ni]]))
-        decoder_input = decoder_input.cuda() if use_cuda else decoder_input
+    if 'Attn' not in str(decoder.modules):
+        print('the normal decoder evaluation method is under constructing')
+    
+    
+    else:
+        for di in range(max_length):
+            decoder_output, decoder_hidden, decoder_attention = decoder(
+                    decoder_input, decoder_hidden, encoder_output, encoder_outputs)
+            decoder_attentions[di] = decoder_attention.data
+            topv, topi = decoder_output.data.topk(1)
+            ni = topi[0][0]
+            if ni == EOS_token:
+                decoded_words.append('<EOS>')
+                break
+            else:
+                decoded_words.append(output_lang.index2word[ni])
+
+    decoder_input = Variable(torch.LongTensor([[ni]]))
+    decoder_input = decoder_input.cuda() if use_cuda else decoder_input
 
     return decoded_words, decoder_attentions[:di + 1]
 
@@ -158,14 +175,14 @@ def showAttention(input_sentence, output_words, attentions):
 
 def evaluateAndShowAttention(input_sentence):
     output_words, attentions = evaluate(
-        encoder1, attn_decoder1, input_sentence)
+        encoder, decoder, input_sentence)
     print('input =', input_sentence)
     print('output =', ' '.join(output_words))
     showAttention(input_sentence, output_words, attentions)
 
 
 
-evaluateRandomly(encoder1, attn_decoder1)
+evaluateRandomly(encoder, decoder)
 
 
 evaluateAndShowAttention("elle a cinq ans de moins que moi .")
