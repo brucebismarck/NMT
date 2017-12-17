@@ -44,11 +44,23 @@ def train(input_variable, target_variable, encoder, decoder, encoder_optimizer, 
     encoder_outputs = encoder_outputs.cuda() if use_cuda else encoder_outputs
 
     loss = 0
+    penal_sum = 0
+    
+    if 'self' not in str(encoder.modules):
+        
+        for ei in range(input_length):
+            encoder_output, encoder_hidden = encoder(
+                    input_variable[ei], encoder_hidden)
+            encoder_outputs[ei] = encoder_output[0]#[0]
+    
+    else:
+        
+        for ei in range(input_length):
+            encoder_output, encoder_hidden, penal = encoder(
+                    input_variable[ei], encoder_hidden)
+            penal_sum += penal
+            encoder_outputs[ei] = encoder_output#[0]#[0]
 
-    for ei in range(input_length):
-        encoder_output, encoder_hidden = encoder(
-            input_variable[ei], encoder_hidden)
-        encoder_outputs[ei] = encoder_output[0]#[0]
 
     decoder_input = Variable(torch.LongTensor([[SOS_token]]))
     decoder_input = decoder_input.cuda() if use_cuda else decoder_input
@@ -56,32 +68,63 @@ def train(input_variable, target_variable, encoder, decoder, encoder_optimizer, 
     decoder_hidden = encoder_hidden
 
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
-
-    if use_teacher_forcing:
+    
+    
+    if 'Attn' in str(decoder.modules):
+    # use attention decoder
+        if use_teacher_forcing:
         # Teacher forcing: Feed the target as the next input
-        for di in range(target_length):
-            decoder_output, decoder_hidden, decoder_attention = decoder(
+            for di in range(target_length):
+                decoder_output, decoder_hidden, decoder_attention = decoder(
+                        decoder_input, decoder_hidden, encoder_output, encoder_outputs)
+            
+                loss += criterion(decoder_output, target_variable[di])
+            
+                decoder_input = target_variable[di]  # Teacher forcing
+
+        else:
+            # Without teacher forcing: use its own predictions as the next input
+            for di in range(target_length):
+                decoder_output, decoder_hidden, decoder_attention = decoder(
                 decoder_input, decoder_hidden, encoder_output, encoder_outputs)
             
-            loss += criterion(decoder_output, target_variable[di])
-            
-            decoder_input = target_variable[di]  # Teacher forcing
+                topv, topi = decoder_output.data.topk(1)
+                ni = topi[0][0]
+
+                decoder_input = Variable(torch.LongTensor([[ni]]))
+                decoder_input = decoder_input.cuda() if use_cuda else decoder_input
+
+                loss += criterion(decoder_output, target_variable[di])
+                if ni == EOS_token:
+                    break
 
     else:
-        # Without teacher forcing: use its own predictions as the next input
-        for di in range(target_length):
-            decoder_output, decoder_hidden, decoder_attention = decoder(
-                decoder_input, decoder_hidden, encoder_output, encoder_outputs)
+        # use basic decoder
+        if use_teacher_forcing:
+            # Teacher forcing: Feed the target as the next input
+            for di in range(target_length):
+                decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden)
             
-            topv, topi = decoder_output.data.topk(1)
-            ni = topi[0][0]
+                loss += criterion(decoder_output, target_variable[di])
+            
+                decoder_input = target_variable[di]  # Teacher forcing
 
-            decoder_input = Variable(torch.LongTensor([[ni]]))
-            decoder_input = decoder_input.cuda() if use_cuda else decoder_input
+        else:
+            # Without teacher forcing: use its own predictions as the next input
+            for di in range(target_length):
+                decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden)
+            
+                topv, topi = decoder_output.data.topk(1)
+                ni = topi[0][0]
 
-            loss += criterion(decoder_output, target_variable[di])
-            if ni == EOS_token:
-                break
+                decoder_input = Variable(torch.LongTensor([[ni]]))
+                decoder_input = decoder_input.cuda() if use_cuda else decoder_input
+
+                loss += criterion(decoder_output, target_variable[di])
+                if ni == EOS_token:
+                    break
+
+
 
     loss.backward()
 

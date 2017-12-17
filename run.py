@@ -28,7 +28,7 @@ eng_prefixes = (
 )
 
 input_lang, output_lang, pairs = prepareData('eng', 'fra', MAX_LENGTH, MIN_LENGTH, eng_prefixes ,True)
-
+#%%
 ##################
 'Embedding part!'
 ##################
@@ -37,17 +37,17 @@ eng_vocab = Vocabulary(output_lang)
 eng_vocab.set_word_embedding('/home/wenyue/Desktop/data_playground/hw2/glove.6B.300d.txt')             
 eng_vocab.embeddings = eng_vocab.embeddings.reshape((eng_vocab.embeddings.shape[0]//300,300))
 eng_embeddings = eng_vocab.embeddings
-
+#%%
 fra_vocab = Vocabulary_fra(input_lang)             
 fra_vocab.set_word_embedding('/home/wenyue/Desktop/data_playground/hw2/wiki.fr.vec') 
 fra_vocab.embeddings = fra_vocab.embeddings.reshape((fra_vocab.embeddings.shape[0]//300,300))
-fra_embeddings = vocab.embeddings
+fra_embeddings = fra_vocab.embeddings
 
 
 #######################
 'model training part!'
 #######################
-
+#%%
 from train import *
 from model import *
 use_cuda = True
@@ -57,23 +57,24 @@ hidden_size = 300
 Source_encoding = False
 Target_encoding = False
 
-'Change the encoder and decoder here. May need to do a little bit change in train part because of the input output shape'
-encoder1 = EncoderRNN(input_lang.n_words, hidden_size,3)
-attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words,3, dropout_p=0.1, max_length=MAX_LENGTH)
+#'Change the encoder and decoder here. May need to do a little bit change in train part because of the input output shape'
+encoder = selfEncoderRNN(input_lang.n_words, hidden_size,3)
+decoder = AttnDecoderRNN(hidden_size, output_lang.n_words,3, dropout_p=0.1, max_length=MAX_LENGTH)
 
 if Source_encoding:
-    encoder1.embedding.weight.data = torch.from_numpy(fra_embeddings).float()
+    encoder.embedding.weight.data = torch.from_numpy(fra_embeddings).float()
 if Target_encoding:
-    attn_decoder1.embedding.weight.data = torch.from_numpy(eng_embeddings).float()
+    decoder.embedding.weight.data = torch.from_numpy(eng_embeddings).float()
 
 if use_cuda:
-    encoder1 = encoder1.cuda()
-    attn_decoder1 = attn_decoder1.cuda()
+    encoder = encoder.cuda()
+    decoder = decoder.cuda()
 
 
-trainIters(encoder1, attn_decoder1, 200000, pairs, input_lang, output_lang, print_every=5000, maxlen = MAX_LENGTH)
+trainIters(encoder, decoder, 200000, pairs, input_lang, output_lang, print_every=5000, maxlen = MAX_LENGTH)
 
 
+#%%
 ##########################
 'Evaluation and viz part'
 ##########################

@@ -72,11 +72,11 @@ class EncoderRNN(nn.Module):
 class selfEncoderRNN(nn.Module):
 
     def __init__(self, input_size, hidden_size, n_layers=1):
-        super(EncoderRNN, self).__init__()
+        super(selfEncoderRNN, self).__init__()
         self.n_layers = n_layers
         self.hidden_size = hidden_size
         self.embedding = nn.Embedding(input_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size, bidirectional = True)
+        self.gru = nn.GRU(hidden_size, hidden_size, num_layers = n_layers,  bidirectional = True)
         
         self.r = 7
         self.da = 250
@@ -101,7 +101,8 @@ class selfEncoderRNN(nn.Module):
         embedded = self.embedding(input).view(1, 1, -1)
         output = embedded
         #print(input.size( 0 ))
-        for i in range(self.n_layers):
+        for i in range(1):
+            
             output, hidden = self.gru(output, hidden)
         output = output.squeeze(1)
         #print('output size')
@@ -143,6 +144,13 @@ class selfEncoderRNN(nn.Module):
         #output_attn = output_attn.squeeze(0)
         #print(output_attn.data.size())
         return output_attn, hidden, penal#, weights
+    
+    def initHidden(self):
+        result = Variable(torch.zeros(2*self.n_layers, 1, self.hidden_size))
+        if use_cuda:
+            return result.cuda()
+        else:
+            return result
 
 'Following Decoder is general decoder without attention mechanism'
 class DecoderRNN(nn.Module):
